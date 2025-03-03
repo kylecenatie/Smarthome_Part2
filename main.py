@@ -1,88 +1,78 @@
-
+import os
 import cv2
 import numpy as np
-import os
 import tensorflow as tf
-from handshape_feature_extractor import HandShapeFeatureExtractor
-from frameextractor import frameExtractor
-from scipy.spatial.distance import cosine
 import csv
+from sklearn.utils import Bunch
+import frameextractor as fe
+import handshape_feature_extractor as hfe
 
-feature_extractor = HandShapeFeatureExtractor.get_instance()
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
-training_videos_path = 'traindata'
-test_videos_path = 'testdata'
-frames_output_path_train = 'frames_output_train'
-frames_output_path_test = 'frames_output_test'
+def extract_image_feature(location, input_file, mid_frame_counter):
 
-training_feature_vectors = []
-test_feature_vectors = []
+    frame_path = fe.frameExtractor(location + input_file, location + "frames/", mid_frame_counter)
+    middle_image = cv2.imread(frame_path, cv2.IMREAD_GRAYSCALE)
+    response = hfe.HandShapeFeatureExtractor.get_instance().extract_feature(middle_image)
+    return response
 
-def extract_features_from_videos(v_fold, f_path, f_vectors):
-    count = 0
-    for video_file in os.listdir(v_fold):
-        video_path = os.path.join(v_fold, video_file)
-        frameExtractor(video_path, f_path, count)
-        frame_file = os.path.join(f_path, f"{count+1:05d}.png")
 
-        # Read the frame
-        frame = cv2.imread(frame_file, cv2.IMREAD_GRAYSCALE)
+def find_gesture_by_filename(gesture_file_name):
+    return next((x for x in gesture_details if x.gesture_key == gesture_file_name.split('_')[0]), None)
 
-        # Extract hand shape feature using HandShapeFeatureExtractor
-        feature_vector = feature_extractor.extract_feature(frame)
 
-        # Store the feature vector
-        f_vectors.append(feature_vector)
+def identify_gesture_from_video(gesture_location, gesture_file_name, mid_frame_counter, featureVectorList):
+    video_feature = extract_image_feature(gesture_location, gesture_file_name, mid_frame_counter)
 
-        count += 1
-        print(f"Processed video {count}: {video_file}")
+    cos_sin, gesture_detail = min(
+        ((tf.keras.losses.cosine_similarity(video_feature, fv.extracted_feature, axis=-1).numpy(), fv.gesture_detail)
+        for fv in featureVectorList),
+        key=lambda x: x[0], default=(1.0, Bunch(gesture_key="", gesture_name="", output_label=""))
+    )
 
-# =============================================================================
-# Get the penultimate layer for training data
-# =============================================================================
-print("Extracting penultimate layer for training data...")
+    print(f"{gesture_file_name} calculated gesture {gesture_detail.gesture_name}")
+    return gesture_detail
 
-# Extract features from all training videos
-extract_features_from_videos(training_videos_path, frames_output_path_train, training_feature_vectors)
+gesture_details = [
+    Bunch(gesture_key="Num0", gesture_name="0", output_label="0"),
+    Bunch(gesture_key="Num1", gesture_name="1", output_label="1"),
+    Bunch(gesture_key="Num2", gesture_name="2", output_label="2"),
+    Bunch(gesture_key="Num3", gesture_name="3", output_label="3"),
+    Bunch(gesture_key="Num4", gesture_name="4", output_label="4"),
+    Bunch(gesture_key="Num5", gesture_name="5", output_label="5"),
+    Bunch(gesture_key="Num6", gesture_name="6", output_label="6"),
+    Bunch(gesture_key="Num7", gesture_name="7", output_label="7"),
+    Bunch(gesture_key="Num8", gesture_name="8", output_label="8"),
+    Bunch(gesture_key="Num9", gesture_name="9", output_label="9"),
+    Bunch(gesture_key="FanDown", gesture_name="Decrease Fan Speed", output_label="10"),
+    Bunch(gesture_key="FanOn", gesture_name="FanOn", output_label="11"),
+    Bunch(gesture_key="FanOff", gesture_name="FanOff", output_label="12"),
+    Bunch(gesture_key="FanUp", gesture_name="Increase Fan Speed", output_label="13"),
+    Bunch(gesture_key="LightOff", gesture_name="LightOff", output_label="14"),
+    Bunch(gesture_key="LightOn", gesture_name="LightOn", output_label="15"),
+    Bunch(gesture_key="SetThermo", gesture_name="SetThermo", output_label="16")
+]
 
-# =============================================================================
-# Get the penultimate layer for test data
-# =============================================================================
-print("Extracting penultimate layer for test data...")
+featureVectorList = []
+path_to_train_data = "traindata/"
+count = 0
+for file in os.listdir(path_to_train_data):
+    if not file.startswith('.') and not file.startswith('frames') and not file.startswith('results'):
+        gesture = find_gesture_by_filename(file)
+        if gesture:
+            featureVectorList.append(Bunch(gesture_detail=gesture, extracted_feature=extract_image_feature(path_to_train_data, file, count)))
+            count += 1
 
-# Extract features from all test videos
-extract_features_from_videos(test_videos_path, frames_output_path_test, test_feature_vectors)
+video_locations = ["test/"]
+test_count = 0
 
-# =============================================================================
-# Recognize the gesture (use cosine similarity for comparing the vectors)
-# =============================================================================
-def recognize_gesture(test_vector, training_vectors):
-    # Calculate cosine similarity between test vector and all training vectors
-    similarities = [cosine(test_vector, train_vector) for train_vector in training_vectors]
-    # Find the index of the minimum cosine distance
-    recognized_gesture_idx = np.argmin(similarities)
-    return recognized_gesture_idx
+with open('Results.csv', 'w', newline='') as results_file:
+    csv_writer = csv.writer(results_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
 
-# List to store recognized gestures
-recognized_gestures = []
-
-# Recognize gestures for all test videos
-for test_vector in test_feature_vectors:
-    gesture_label = recognize_gesture(test_vector, training_feature_vectors)
-    recognized_gestures.append(gesture_label)
-    print(f"Recognized gesture: {gesture_label}")
-
-# =============================================================================
-# Save the results to "Results.csv"
-# =============================================================================
-print("Saving results to Results.csv...")
-
-# Save recognized gestures to a CSV file
-with open('Results.csv', mode='w', newline='') as file:
-    writer = csv.writer(file)
-    for gesture in recognized_gestures:
-        writer.writerow([gesture])
-
-print("Task 3 completed successfully!")
-
+    for video_location in video_locations:
+        for test_file in os.listdir(video_location):
+            if not test_file.startswith('.') and not test_file.startswith('frames') and not test_file.startswith('results'):
+                recognized_gesture_detail = identify_gesture_from_video(video_location, test_file, test_count, featureVectorList)
+                test_count += 1
+                csv_writer.writerow([recognized_gesture_detail.output_label])
