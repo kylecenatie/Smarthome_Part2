@@ -29,7 +29,7 @@ def extract_feature(location, input_file, mid_frame_counter):
 
 
 def decide_gesture_by_file_name(gesture_file_name):
-    match = regex.match(r"([A-Za-z0-9]+)_PRACTICE_\d+", gesture_file_name)
+    match = regex.match(r"([A-Za-z0-9]+)_PRACTICE_\d+_.+\.mp3", gesture_file_name)
     if match:
         gesture_key = match.group(1)
         for x in gesture_details:
