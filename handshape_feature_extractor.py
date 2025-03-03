@@ -69,5 +69,3 @@ class HandShapeFeatureExtractor:
             return self.model.predict(img_arr)
         except Exception as e:
             raise
-
-
